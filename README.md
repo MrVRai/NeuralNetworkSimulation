@@ -20,7 +20,8 @@ This project demonstrates the implementation of a deep neural network from scrat
 The **MNIST dataset** is used for training and testing:
 - 60,000 training images
 - 10,000 test images
-- Grayscale images (pixel values: 0-255, normalized to 0-1)!
+- Grayscale images (pixel values: 0-255, normalized to 0-1)//
+  
 
 
 
