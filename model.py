@@ -13,8 +13,8 @@ class DeepNeuralNetwork():
         return sig
 
     def softmax(self, x):
-        exps = np.exp(x - np.max(x))
-        return exps / np.sum(exps, axis=0)
+        exps = np.exp(x - np.max(x, axis=0, keepdims=True))
+        return exps / np.sum(exps, axis=0, keepdims=True)
 
     def initialize(self):
         input_layer, hidden_layer, output_layer = self.sizes
@@ -32,3 +32,28 @@ class DeepNeuralNetwork():
         self.cache["Z2"] = np.matmul(self.params["W2"], self.cache["A1"]) + self.params["b2"]
         self.cache["A2"] = self.softmax(self.cache["Z2"])
         return self.cache["A2"]
+
+    def cross_entropy_loss(self, y, output):
+        m = y.shape[0]
+        log_probs = np.multiply(y.T, np.log(output + 1e-9))  # Add small epsilon for numerical stability
+        loss = -np.sum(log_probs) / m
+        return loss
+
+    def accuracy(self, y, output):
+        predictions = np.argmax(output, axis=0)
+        labels = np.argmax(y, axis=1)
+        return np.mean(predictions == labels)
+
+    def back_propagate(self, y, output):
+        m = y.shape[0]
+        dZ2 = output - y.T
+        dW2 = (1. / m) * np.matmul(dZ2, self.cache["A1"].T)
+        db2 = (1. / m) * np.sum(dZ2, axis=1, keepdims=True)
+
+        dA1 = np.matmul(self.params["W2"].T, dZ2)
+        dZ1 = dA1 * self.sigmoid(self.cache["Z1"], derivative=True)
+        dW1 = (1. / m) * np.matmul(dZ1, self.cache["X"])
+        db1 = (1. / m) * np.sum(dZ1, axis=1, keepdims=True)
+
+        self.grads = {"W1": dW1, "b1": db1, "W2": dW2, "b2": db2}
+        return self.grads

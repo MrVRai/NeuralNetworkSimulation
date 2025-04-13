@@ -1,4 +1,4 @@
-# Neural Networks from Scratch
+# Neural Networks Simulation
 
 ## Overview
 This project demonstrates the implementation of a deep neural network from scratch using **NumPy**, without relying on high-level deep learning frameworks. The model is trained to classify handwritten digits from the **MNIST dataset**.
