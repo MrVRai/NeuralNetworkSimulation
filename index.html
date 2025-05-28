@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DNN Weight Animation</title>
+<style>
+  body, html { margin: 0; height: 100%; background: #fff; overflow: hidden; }
+  #networkCanvas { display: block; background: #f9f9f9; }
+  #info {
+    position: fixed;
+    top: 10px; left: 10px;
+    background: rgba(255,255,255,0.9);
+    border: 1px solid #ccc;
+    padding: 8px 12px;
+    font-family: monospace;
+    font-size: 14px;
+    border-radius: 4px;
+    pointer-events: none;
+  }
+  #epochCounter {
+    position: fixed;
+    bottom: 10px; left: 50%; transform: translateX(-50%);
+    font-family: monospace;
+    font-size: 18px;
+    background: #eee;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid #bbb;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="networkCanvas"></canvas>
+<div id="info" style="display:none;"></div>
+<div id="epochCounter">Loading weights...</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('networkCanvas');
+  const ctx = canvas.getContext('2d');
+  const info = document.getElementById('info');
+  const epochCounter = document.getElementById('epochCounter');
+
+  let W1_history = [];
+  let W2_history = [];
+  let epoch = 0;
+  let maxEpoch = 0;
+  const animationFPS = 1; // 1 frame per second (adjust if needed)
+
+  // Neural net layer sizes
+  const layerSizes = [30, 32, 10];
+  const neuronRadius = 12;
+
+  // Canvas size & scaling
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Calculate neuron positions in layers
+  // horizontal spacing fixed by canvas width, vertical by layer size
+  const layerX = [];
+  const neuronPos = [];
+
+  function calculatePositions() {
+    const width = canvas.width;
+    const height = canvas.height;
+    const marginX = width * 0.1;
+    const marginY = height * 0.1;
+    const availableWidth = width - 2 * marginX;
+
+    layerX.length = 0;
+    neuronPos.length = 0;
+
+    // horizontal positions equally spaced by layers count - 1
+    for(let i=0; i<layerSizes.length; i++) {
+      layerX.push(marginX + (availableWidth * i / (layerSizes.length - 1)));
+    }
+
+    // For each layer calculate neuron y positions, vertically centered
+    for(let l=0; l<layerSizes.length; l++) {
+      const size = layerSizes[l];
+      const neurons = [];
+      const availableHeight = height - 2 * marginY;
+      for(let n=0; n<size; n++) {
+        // distribute neurons vertically with spacing
+        const y = marginY + (availableHeight * (n + 0.5) / size);
+        neurons.push({x: layerX[l], y});
+      }
+      neuronPos.push(neurons);
+    }
+  }
+  calculatePositions();
+
+  // Helper: Draw neuron as a circle
+  function drawNeuron(x, y, label) {
+    ctx.beginPath();
+    ctx.fillStyle = '#8ecae6'; // light blue fill
+    ctx.strokeStyle = '#023047'; // dark blue border
+    ctx.lineWidth = 2;
+    ctx.arc(x, y, neuronRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Draw label below neuron
+    ctx.fillStyle = '#023047';
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x, y + neuronRadius + 14);
+  }
+
+  // Helper: Draw connection line with color and thickness
+  function drawConnection(x1, y1, x2, y2, weight) {
+    const maxThickness = 5;
+    const minThickness = 0.5;
+    const thickness = Math.min(maxThickness, minThickness + Math.abs(weight) * 8);
+    ctx.lineWidth = thickness;
+    ctx.strokeStyle = weight > 0 ? `rgba(38, 166, 154, ${Math.min(1, Math.abs(weight)*5)})` : `rgba(244, 67, 54, ${Math.min(1, Math.abs(weight)*5)})`; // teal for +, red for -
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+
+  // Draw all neurons and all connections for the current epoch
+  function drawNetwork(epochIndex) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const W1 = W1_history[epochIndex]; // shape: [32, 30]
+    const W2 = W2_history[epochIndex]; // shape: [10, 32]
+
+    // Draw connections Input->Hidden (W1)
+    for(let i=0; i<layerSizes[1]; i++) { // hidden layer neurons (32)
+      for(let j=0; j<layerSizes[0]; j++) { // input neurons (30)
+        const weight = W1[i][j];
+        if (Math.abs(weight) < 0.01) continue; // skip tiny weights
+        const from = neuronPos[0][j];
+        const to = neuronPos[1][i];
+        drawConnection(from.x, from.y, to.x, to.y, weight);
+      }
+    }
+
+    // Draw connections Hidden->Output (W2)
+    for(let i=0; i<layerSizes[2]; i++) { // output neurons (10)
+      for(let j=0; j<layerSizes[1]; j++) { // hidden neurons (32)
+        const weight = W2[i][j];
+        if (Math.abs(weight) < 0.01) continue;
+        const from = neuronPos[1][j];
+        const to = neuronPos[2][i];
+        drawConnection(from.x, from.y, to.x, to.y, weight);
+      }
+    }
+
+    // Draw neurons with labels (L1, L2, L3 for layers)
+    for(let l=0; l<layerSizes.length; l++) {
+      for(let n=0; n<layerSizes[l]; n++) {
+        drawNeuron(neuronPos[l][n].x, neuronPos[l][n].y, `L${l+1}N${n+1}`);
+      }
+    }
+
+    epochCounter.textContent = `Epoch: ${epochIndex + 1} / ${maxEpoch}`;
+  }
+
+  // Load weights.json and start animation
+  async function loadAndAnimate() {
+    try {
+      const resp = await fetch('weights.json');
+      if(!resp.ok) throw new Error("Failed to fetch weights.json");
+      const data = await resp.json();
+
+      W1_history = data.W1;
+      W2_history = data.W2;
+
+      maxEpoch = Math.min(W1_history.length, W2_history.length);
+
+      if(maxEpoch === 0) throw new Error("No weight data found");
+
+      epoch = 0;
+
+      drawNetwork(epoch);
+
+      // Animate epochs
+      setInterval(() => {
+        epoch = (epoch + 1) % maxEpoch;
+        drawNetwork(epoch);
+      }, 1000 / animationFPS);
+
+    } catch (e) {
+      epochCounter.textContent = `Error loading weights.json: ${e.message}`;
+    }
+  }
+
+  loadAndAnimate();
+
+  // Optional: Show neuron/connection info on mouse move (hover)
+  canvas.addEventListener('mousemove', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left;
+    const my = ev.clientY - rect.top;
+
+    // Check neurons hover
+    for(let l=0; l<layerSizes.length; l++) {
+      for(let n=0; n<layerSizes[l]; n++) {
+        const neuron = neuronPos[l][n];
+        const dx = mx - neuron.x;
+        const dy = my - neuron.y;
+        if(dx*dx + dy*dy < neuronRadius*neuronRadius) {
+          info.style.display = 'block';
+          info.style.left = ev.clientX + 15 + 'px';
+          info.style.top = ev.clientY + 15 + 'px';
+          info.textContent = `Layer ${l+1} Neuron ${n+1}`;
+          return;
+        }
+      }
+    }
+
+    // Check connections hover
+    const tolerance = 5; // px
+    // Check W1 connections
+    if(epoch < maxEpoch) {
+      const W1 = W1_history[epoch];
+      for(let i=0; i<layerSizes[1]; i++) {
+        for(let j=0; j<layerSizes[0]; j++) {
+          if(Math.abs(W1[i][j]) < 0.01) continue;
+          const from = neuronPos[0][j];
+          const to = neuronPos[1][i];
+          if(pointNearLine(mx, my, from.x, from.y, to.x, to.y, tolerance)) {
+            info.style.display = 'block';
+            info.style.left = ev.clientX + 15 + 'px';
+            info.style.top = ev.clientY + 15 + 'px';
+            info.textContent = `W1[${i},${j}] = ${W1[i][j].toFixed(4)}`;
+            return;
+          }
+        }
+      }
+      // Check W2 connections
+      const W2 = W2_history[epoch];
+      for(let i=0; i<layerSizes[2]; i++) {
+        for(let j=0; j<layerSizes[1]; j++) {
+          if(Math.abs(W2[i][j]) < 0.01) continue;
+          const from = neuronPos[1][j];
+          const to = neuronPos[2][i];
+          if(pointNearLine(mx, my, from.x, from.y, to.x, to.y, tolerance)) {
+            info.style.display = 'block';
+            info.style.left = ev.clientX + 15 + 'px';
+            info.style.top = ev.clientY + 15 + 'px';
+            info.textContent = `W2[${i},${j}] = ${W2[i][j].toFixed(4)}`;
+            return;
+          }
+        }
+      }
+    }
+
+    info.style.display = 'none';
+  });
+
+  function pointNearLine(px, py, x1, y1, x2, y2, tol) {
+    // distance from point (px,py) to line segment (x1,y1)-(x2,y2)
+    const A = px - x1;
+    const B = py - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const len_sq = C * C + D * D;
+    let param = -1;
+    if (len_sq !== 0) param = dot / len_sq;
+
+    let xx, yy;
+
+    if (param < 0) {
+      xx = x1;
+      yy = y1;
+    }
+    else if (param > 1) {
+      xx = x2;
+      yy = y2;
+    }
+    else {
+      xx = x1 + param * C;
+      yy = y1 + param * D;
+    }
+
+    const dx = px - xx;
+    const dy = py - yy;
+    return (dx * dx + dy * dy) <= tol * tol;
+  }
+
+})();
+</script>
+
+</body>
+</html>
